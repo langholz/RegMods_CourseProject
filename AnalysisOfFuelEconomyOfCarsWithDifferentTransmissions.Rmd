@@ -1,0 +1,242 @@
+---
+title: "Analysis of Automobile Fuel Economy using Different Transmissions"
+author: "Elmar Langholz"
+date: "May 21, 2015"
+fontsize: 8pt
+geometry: margin=0.52in
+header-includes: \usepackage{graphicx}
+output:
+    pdf_document:
+        fig_caption: true
+---
+
+## Summary
+
+Through this document we set out to try to determine whether using a manual or automatic transmission was better for fuel economy. Using the Motor Trend US magazine data set for 1973 - 1974 automobile models, we were able to determine, with a 95% confidence, that if we randomlly pick a car a manual transmission will perform on average better by reducing the consumption of gasoline by 7.24 gallons per mile. There are other confounding variables, besides transmission, which impact the fuel economy. Weight is one of these variables for which we were able to determine that with constant weight the fuel economy reduces on average 5.2984 faster from an automatic transmission to a manual transmission.
+
+## Exploratory data analysis
+
+```{r setup,echo=FALSE,results='hide',warning=FALSE,message=FALSE}
+enforceInstallAndLoadPackage <- function (package) {
+    if (!(package %in% rownames(installed.packages())) ) {
+        install.packages(package, repos = "http://cran.rstudio.com/")
+    }
+
+    library(package, character.only = TRUE)
+}
+
+enforceInstallAndLoadPackage("datasets")
+enforceInstallAndLoadPackage("plyr")
+enforceInstallAndLoadPackage("reshape2")
+enforceInstallAndLoadPackage("ggplot2")
+enforceInstallAndLoadPackage("pander")
+enforceInstallAndLoadPackage("car")
+enforceInstallAndLoadPackage("effects")
+```
+
+```{r loadCarData,echo=FALSE,results='hide',ref.label="loadData"}
+```
+```{r cleanCarData,echo=FALSE,results='hide',ref.label="cleanData"}
+```
+
+  After the [data is loaded](#loadData) and we are able to understand its [structure](#structureOfData), we proceed to process it by [cleaning](#cleanData) and [validating](#validateData) to make sure that it contains appropriate values. Once processed and [summarized](#summaryOfData), we are able to determine that the transmission type variable is not [equally distributed](#freqAmVariable) across the observations which in turn means that *there could be a bias introduced just by the fact that there are more measurements from the automatic transmission type* (especially with such a low amount of observations). A proper follow up would be to understand how the observations where chosen and if they were indeed random. Due to time constraint, we will assume this has no reasonable effect on the data set and that it is truly random. Keeping that aside, if we perform a visual analysis through a [scatterplot matrix](#scatterplotMatrixOfAllData), we are able to roughly determine that *the number of cylinders (`cyl`), displacement (`disp`), horse power (`hp`) and weight (`wt`) have a high negative correlation with the fuel economy (`mpg`)*. To confirm this, we look at the [actual correlations](#correlationAnalysis) and we ascertain the afore statement.
+
+## Impact of transmission on fuel economy
+
+```{r tTest,echo=FALSE,results='hide',ref.label="tTestOfFuelEconomyByTransmissionType"}
+```
+
+If we take a look at *Figure 1*, the fuel economy when compared with the transmission types, we notice that the fuel economy is better on average for manual transmission than that of an auatomated transmission. Performing [statistical inference](#testOfFuelEconomyByTransmission) confirms (p-value: `r round(testMpgByAm$p.value, 5)` < 0.05) this by accepting to reject the null hypothesis. With a 95% confidence interval the difference in mean (between automatic and manual) is of (`r testMpgByAm$conf.int[1]`, `r testMpgByAm$conf.int[2]`).
+
+```{r plotFuelEconomyByTransmissionType,echo=FALSE,fig.width=4,fig.height=2,fig.show='hold',fig.cap="Average impact of fuel economy by transmission type"}
+plot1 <- ggplot(mtcars, aes(x = am, y = mpg, fill = am))
+plot1 <- plot1 + geom_violin()
+plot1 <- plot1 + geom_boxplot(width = 0.1)
+plot1 <- plot1 + scale_x_discrete("Transmission type")
+plot1 <- plot1 + scale_y_continuous("Miles per gallon")
+plot1
+```
+
+## Quantification of fuel economy difference in transmissions
+
+With the intent of quantifying the fuel ecnonomy we make use of single and multivariate regression models. We know, through the [scatterplot matrix](#scatterplotMatrixOfAllData), that fuel economy is not only explained by transmission type but by other variables as well. Since the data set contains `r dim(mtcars)[2]` columns and we are aware that we will fix the response `mpg` and include at least the `am` predictor, there are approximately $2^9 - 1 = 511$ different models that we would need to try in order to select the best one. However, we decided to take a look at four models which would likely yield "parsimonious, interpretable representations of the data that enhance our understanding":
+1. Model which includes only the baseline response and predictor 
+2. Model which includes all the variables
+3. Model automatically generated by the stepwise regression
+4. Model which includes the baseline and the variable with the maximum correlation
+
+### Baseline regression model
+
+```{r lmMpgWithAm,echo=FALSE,results='hide',ref.label="modelBaseline"}
+```
+
+After creating the [baseline regression model](#modelSelectionBaseline), we notice that manual transmission cars consume `r round(summary(fitMpgWithAm)$coef[2,1], 4)` gallons per mile less fuel than an automatic transmission. However, this model only accounts for `r round(summary(fitMpgWithAm)$adj.r.squared * 100, 2)`% of the variance.
+
+### All variables regression model
+
+```{r lmAll,echo=FALSE,results='hide',ref.label="modelAll"}
+```
+```{r lmCompareBaselineVsAll,echo=FALSE,results='hide',ref.label="compareModelBaselineWithAll"}
+```
+
+[Comparing](#modelComparisonBaselineVsAll) the regression model which contains [all the variables](#modelSelectionAll) with the [baseline](#modelSelectionBaseline), through the p-value for the difference in the F statistic (`r as.character(devianceBaselineVsAll$"Pr(>F)"[2])`), we confirm that including all variables is better model than just including the transmission. However, we question the outcome since we are including variables that have a low correlation to the response which in turn increases standard errors of the regression variables as we can see with all the coefficient p-values which are larger than 0.05. Also, $R^2$ increases monotonically as more regressors are included which explain why we the model accounts for an `r round(summary(fitAll)$adj.r.squared * 100, 2)`% variance.
+
+### Best stepwise AIC regression model
+
+```{r lmStepwise,echo=FALSE,results='hide',ref.label="modelStepwiseAIC"}
+```
+
+With the intent of automatically selecting the best model by iterating through different variables we make use of [stepwise regression](https://en.wikipedia.org/wiki/Stepwise_regression) using [AIC](http://en.wikipedia.org/wiki/Akaike_information_criterion). The [best regression model retrieved](#modelSelectionStepwiseAIC) includes the car weight (`wt`), quarter mile time (`qsec`) and the transmission (`am`) as predictors. While it accounts for `r round(summary(fitAIC)$adj.r.squared * 100, 2)`% of the variance, we see that the p-value for the intercept is not statistically significant (pvalue: `r summary(fitAIC)$coef[1, 4]` > 0.05). As a point in hand, the quarter mile time makes it difficult to interpret.
+
+### Baseline with maximum correlation variable regression model
+
+```{r mpgVarCorr,echo=FALSE,results='hide',ref.label="variablesCorrelationToMpg"}
+```
+```{r lmMacCor,echo=FALSE,results='hide',ref.label="modelMaxCor"}
+```
+```{r lmMaxCorWithInteraction,echo=FALSE,results='hide',ref.label="modelMaxCorWithInteraction"}
+```
+
+Looking at the previously defined models and the [correlation analysis](#correlationAnalysis), we notice that weight (`wt`) is not only present in the stepwise regression but is also the variable with the maximum correlation with a value of `r as.character(round(varCor[1, 5], 5))`. Assesing the [regression model](#modelSelectionMaxCor) with the baseline and including weight yields a model for which the p-value of the transmission coefficient is not statistically significant (pvalue: `r summary(fitMpgWithAmTimesWt)$coef[2, 4]` > 0.05). Nonetheless, if we analyze at the [regression model](#modelSelectionMaxCorWithInteraction) which includes interaction between the weight and the transmission we realize that this model encompasses both a valid set of p-values for the coefficients ($\forall p_{i} < 0.05$) and that the model accounts for `r round(summary(fitMpgWithAmTimesWt)$adj.r.squared * 100, 4)`% of the variance. 
+
+## Conclusion
+
+```{r press,echo=FALSE,results='hide',ref.label="pressResidualAnalysis"}
+```
+
+Regarding the impact of the tranmisson on the fuel economy, we can say that a randomlly picked car with a manual tranmission will have a better fuel economy than one with an automatic transmission. Specifically, we notice that manual transmission cars consume `r round(summary(fitMpgWithAm)$coef[2,1], 4)` gallons per mile less fuel than an automatic transmission on average.
+
+As far as the quantification aspect of the selected regression model (`lm(mpg ~ am * wt)`) which accounts for the weight confounding effect, we can say that constant weight (with a p-value of `r round(summary(fitMpgWithAmTimesWt)$coef[4, 4], 4)`)  the fuel economy reduces on average `r abs(summary(fitMpgWithAmTimesWt)$coef[4, 1])` faster from an automatic transmission to a manual transmission (which can be depicted by an [effects plot](#effectTransmissionWithWeight). There is room for improvement in this model, likely including other correlated variables. Sepecifically, after performing [diagnostics](#modelDiagnostic), through the *Residuals vs Fitted* plot we are able to determine [heteroscedasticity](http://en.wikipedia.org/wiki/Heteroscedasticity). In the *Normal Q-Q* plot, when looking at the end of the line, we notice that the current model is not fully linear yet. As a point in hand, the [press residuals](#pressAnalysis) identify that the *`r names(maxDev)[1]`* is the car that deviates the most from others leading us think that further investigation on it should be performed.
+
+\newpage
+
+## Appendix
+
+### 1. Loading data {#loadData}
+
+The [mtcars](https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/mtcars.html) data set is provided by the [datasets package](https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/00Index.html).
+
+```{r loadData,echo=TRUE,eval=FALSE}
+library(datasets); data(mtcars); mtcarsOrig <- mtcars
+```
+
+### 2. Structure of data {#structureOfData}
+
+```{r structureOfData,echo=TRUE,eval=FALSE}
+str(mtcarsOrig)
+```
+
+### 3. Clean data {#cleanData}
+
+```{r cleanData,echo=TRUE,eval=FALSE}
+mtcars$am <- factor(mtcars$am); levels(mtcars$am) <- c("Automatic", "Manual")
+mtcars$vs <- factor(mtcars$vs); levels(mtcars$vs) <- c("Straight", "V") 
+```
+
+### 4. Validate data {#validateData}
+
+```{r validateData,echo=TRUE,eval=TRUE}
+sum(data.frame(
+    mpg = sum(mtcars$mpg <= 0), disp = sum(mtcars$disp <= 0), hp = sum(mtcars$hp <= 0),
+    drat = sum(mtcars$drat <= 0), wt = sum(mtcars$wt <= 0, qsec = sum(mtcars$qsec <= 0)),
+    cyl = sum(mtcars$cyl <= 0), gear = sum(mtcars$gear <= 0), carb = sum(mtcars$carb <= 0)))
+```
+
+### 5. Summary of data {#summaryOfData}
+
+Variables       | Description                 | Values Summary
+--------------- | --------------------------- | -------------------------------------------
+ mpg            | Miles/(US) gallon           | Real-valued:  $\mu$ = `r round(mean(mtcars$mpg), 2)`, $\sigma$ = `r round(sd(mtcars$mpg), 2)`, [`r min(mtcars$mpg)`, `r max(mtcars$mpg)`]
+ cyl            | Number of cylinders         | Count: `r paste(sort(unique(mtcars$cyl)), collapse = ",  ")`
+ disp           | Displacement (cu.in.)       | Real-valued: $\mu$ = `r round(mean(mtcars$disp), 2)`, $\sigma$ = `r round(sd(mtcars$disp), 2)`, [`r min(mtcars$disp)`, `r max(mtcars$disp)`]
+ hp             | Gross horsepower            | Real-valued: $\mu$ = `r round(mean(mtcars$hp), 2)`, $\sigma$ = `r round(sd(mtcars$hp), 2)`, [`r min(mtcars$hp)`, `r max(mtcars$hp)`]
+ drat           | Rear axle ratio             | Real-valued: $\mu$ = `r round(mean(mtcars$drat), 2)`, $\sigma$ = `r round(sd(mtcars$drat), 2)`, [`r min(mtcars$drat)`, `r max(mtcars$drat)`]
+ wt             | Weight (lb/1000)            | Real-valued: $\mu$ = `r round(mean(mtcars$wt), 2)`, $\sigma$ = `r round(sd(mtcars$wt), 2)`, [`r min(mtcars$wt)`, `r max(mtcars$wt)`]
+ qsec           | Quarter (1/4) mile time     | Real-valued: $\mu$ = `r round(mean(mtcars$qsec), 2)`, `r round(sd(mtcars$qsec), 2)`, [`r min(mtcars$qsec)`, `r max(mtcars$qsec)`]
+ vs             | V/S (engine type)           | Categorical: `r paste(levels(mtcars$vs), collapse = ",  ")`
+ am             | Transmission                | Categorical: `r paste(levels(mtcars$am), collapse = ",  ")`
+ gear           | Number of forward gears     | Count: `r paste(sort(unique(mtcars$gear)), collapse = ",  ")`
+ carb           | Number of carburetors       | Count: `r paste(sort(unique(mtcars$carb)), collapse = ",  ")`
+
+Table 1: Summary of data
+
+### 6. Frequency of the transmission variable {#freqAmVariable}
+
+```{r amFrequency,echo=FALSE,results='asis'}
+pandoc.table(as.data.frame(table(mtcars$am, dnn = c("am"))), style = "grid", caption = "Frequency of the values of am")
+```
+
+### 7. Scatter plot matrix for all the cars data set {#scatterplotMatrixOfAllData}
+
+```{r scatterplotMatrixAll,echo=TRUE,eval=FALSE,warning=FALSE,fig.cap="Cars Data Set Scatterplot Matrix"}
+scatterplotMatrix(mtcars)
+```
+
+### 8. Correlation analysis of all variables with respect to fuel economy {#correlationAnalysis}
+
+```{r variablesCorrelationToMpg,echo=TRUE}
+varCor <- cor(mtcars$mpg, mtcars[, !names(mtcars) %in% c("mpg", "am", "vs")])
+```
+
+### 9. Student's t-Test of fuel economy by transmission type {#testOfFuelEconomyByTransmission}
+
+```{r tTestOfFuelEconomyByTransmissionType,echo=TRUE}
+testMpgByAm <- t.test(mtcars$mpg ~ mtcars$am)
+```
+
+### 10. Covariate model selection I: Baseline {#modelSelectionBaseline}
+
+```{r modelBaseline,echo=TRUE}
+fitMpgWithAm <- lm(mpg ~ am, data = mtcars)
+```
+
+### 11. Covariate model selection II: All variables {#modelSelectionAll}
+
+```{r modelAll,echo=TRUE}
+fitAll <- lm(mpg ~ ., data = mtcars)
+```
+
+### 12. Model comparison: Baseline vs. All {#modelComparisonBaselineVsAll}
+
+```{r compareModelBaselineWithAll,echo=TRUE}
+devianceBaselineVsAll <- anova(fitMpgWithAm, fitAll)
+```
+
+### 13. Covariate model selection III: Stepwise using AIC {#modelSelectionStepwiseAIC}
+
+```{r modelStepwiseAIC,echo=TRUE}
+k <- qchisq(0.05, 1, lower.tail = FALSE) # adjust single variable at a time p-value < 0.05 (5%)
+fitAIC <- step(fitAll, direction = "both", trace = 0, k = k, steps = 10000)
+```
+
+### 14. Covariate model selection IV: Baseline with maximum correlation {#modelSelectionMaxCor}
+
+```{r modelMaxCor,echo=TRUE}
+fitMpgWithAmPlusWt <- lm(mpg ~ am + wt, data = mtcars)
+```
+
+### 15. Covariate model selection IV: Baseline with maximum correlation with interaction {#modelSelectionMaxCorWithInteraction}
+
+```{r modelMaxCorWithInteraction,echo=TRUE}
+fitMpgWithAmTimesWt <- lm(mpg ~ am * wt, data = mtcars)
+```
+
+### 16. PRESS residual analysis {#pressAnalysis}
+
+```{r pressResidualAnalysis,echo=TRUE}
+press <- resid(fitMpgWithAmTimesWt) / (1 - hatvalues(fitMpgWithAmTimesWt)); maxDev <- which.max(press)
+```
+
+### 17. Effect plot of transmission with weight on fuel economy {#effectTransmissionWithWeight}
+
+```{r effectPlotOfAmWithWt,echo=TRUE,eval=FALSE}
+plot(effect(term = "am:wt", mod = fitMpgWithAmTimesWt, default.levels = 2), multiline = TRUE)
+```
+
+### 18. Diagnostics for lm(mpg ~ am * wt) {#modelDiagnostic}
+
+```{r bestModelDiagnostics,echo=TRUE,fig.show='hold',fig.cap="Diagnostics: lm(mpg ~ am * wt)"}
+par(mfrow = c(2, 2))
+plot(fitMpgWithAmTimesWt)
+par(mfrow = c(1, 1))
+```
